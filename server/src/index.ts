@@ -179,6 +179,11 @@ io.on('connection', (socket) => {
     io.to(data.to).emit('webrtc:ice-candidate', { from: socket.id, candidate: data.candidate });
   });
 
+  // Proximity-based peer disconnect (not full socket disconnect)
+  socket.on('webrtc:peer-leave', (data: { to: string }) => {
+    io.to(data.to).emit('webrtc:peer-left', socket.id);
+  });
+
   socket.on('webrtc:media-state', (data: { to: string; video: boolean; audio: boolean; screen: boolean }) => {
     io.to(data.to).emit('webrtc:media-state', { from: socket.id, video: data.video, audio: data.audio, screen: data.screen });
   });

@@ -101,7 +101,7 @@ export class WebRTCManager {
     });
 
     this.socket.on('webrtc:peer-left', (peerId: string) => {
-      this.closePeer(peerId);
+      this.closePeer(peerId, false); // don't notify back — they already know
       this.onPeerDisconnected(peerId);
     });
 
@@ -391,17 +391,25 @@ export class WebRTCManager {
     }
   }
 
-  closePeer(peerId: string): void {
+  closePeer(peerId: string, notify = true): void {
     const pc = this.peers.get(peerId);
     if (pc) {
       pc.close();
       this.peers.delete(peerId);
       this.pendingCandidates.delete(peerId);
       this._remoteStreamIds.delete(peerId);
+      // Notify remote peer so they clean up immediately (don't wait for ICE timeout)
+      if (notify) {
+        this.socket.emit('webrtc:peer-leave', { to: peerId });
+      }
     }
   }
 
   disconnectAllPeers(): void {
+    // Notify all peers before closing
+    for (const peerId of this.peers.keys()) {
+      this.socket.emit('webrtc:peer-leave', { to: peerId });
+    }
     this.peers.forEach((pc) => pc.close());
     this.peers.clear();
     this.pendingCandidates.clear();
@@ -415,6 +423,10 @@ export class WebRTCManager {
 
   isConnectedTo(peerId: string): boolean {
     return this.peers.has(peerId);
+  }
+
+  getConnectedPeerIds(): string[] {
+    return Array.from(this.peers.keys());
   }
 
   async startScreenShare(): Promise<MediaStream> {

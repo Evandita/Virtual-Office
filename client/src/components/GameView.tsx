@@ -214,6 +214,19 @@ export const GameView: React.FC<GameViewProps> = ({ playerName, avatar: initialA
     if (!rtc) return;
 
     const handleProximity = async () => {
+      const nearbySet = new Set(nearbyPlayers);
+
+      // Close peers that are no longer nearby
+      const connectedPeers = rtc.getConnectedPeerIds();
+      for (const peerId of connectedPeers) {
+        if (!nearbySet.has(peerId)) {
+          rtc.closePeer(peerId);
+          setRemoteStreams((prev) => { const n = new Map(prev); n.delete(peerId); return n; });
+          setRemoteScreenStreams((prev) => { const n = new Map(prev); n.delete(peerId); return n; });
+          setPeerMediaState((prev) => { const n = new Map(prev); n.delete(peerId); return n; });
+        }
+      }
+
       if (nearbyPlayers.length > 0) {
         try {
           // Only acquire stream if user has enabled mic or cam
@@ -230,11 +243,6 @@ export const GameView: React.FC<GameViewProps> = ({ playerName, avatar: initialA
         } catch (err) {
           console.warn('Could not access media devices:', err);
         }
-      } else {
-        // No one nearby - close peer connections but keep local stream
-        // so user doesn't have to re-grant permissions
-        rtc.disconnectAllPeers();
-        setRemoteStreams(new Map());
       }
     };
 
