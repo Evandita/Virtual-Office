@@ -1,0 +1,23 @@
+{
+  "name": "virtual-office",
+  "version": "0.1.0",
+  "description": "An open-source virtual office with spatial audio/video, avatar movement, and real-time collaboration",
+  "private": true,
+  "workspaces": [
+    "client",
+    "server",
+    "shared"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "dev:server": "npm run dev --workspace=server",
+    "dev:client": "npm run dev --workspace=client",
+    "build": "npm run build --workspace=shared && npm run build --workspace=server && npm run build --workspace=client",
+    "start": "npm run start --workspace=server"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "typescript": "^5.7.3"
+  },
+  "license": "MIT"
+}
