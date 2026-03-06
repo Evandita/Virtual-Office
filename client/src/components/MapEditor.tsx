@@ -2,7 +2,6 @@ import React, { useState, useCallback, useRef, useEffect } from 'react';
 import type { DecorationType, FurnitureType, DecorationItem, FurnitureItem, RoomVisual } from '../game/mapConfig';
 import type { OfficeScene } from '../game/OfficeScene';
 import {
-  getMapConfig, updateMapConfig,
   exportMapConfigJSON, importMapConfigJSON,
 } from '../game/mapStore';
 
@@ -13,8 +12,8 @@ interface MapEditorProps {
 }
 
 type EditorTool = 'select' | 'place' | 'eraser' | 'room' | 'desk';
+type PlaceMode = 'item' | 'room' | 'desk';
 
-// ── Item definitions with emoji icons ──────────────────────────────────
 interface ItemDef {
   category: 'decoration' | 'furniture';
   type: string;
@@ -59,7 +58,7 @@ const FURNITURE_ITEMS: ItemDef[] = [
 
 const ALL_ITEMS = [...DECORATION_ITEMS, ...FURNITURE_ITEMS];
 
-type PaletteTab = 'all' | 'decorations' | 'furniture';
+type PaletteTab = 'all' | 'decorations' | 'furniture' | 'tools';
 
 const ROOM_TYPES: { value: RoomVisual['type']; label: string }[] = [
   { value: 'meeting', label: 'Meeting' },
@@ -78,10 +77,10 @@ const ROOM_COLOR_PRESETS: { label: string; floor: { base: number; alt: number };
 ];
 
 const DOOR_SIDES = [
-  { value: 'left', label: 'Left' },
-  { value: 'right', label: 'Right' },
-  { value: 'top', label: 'Top' },
-  { value: 'bottom', label: 'Bottom' },
+  { value: 'left', label: 'L' },
+  { value: 'right', label: 'R' },
+  { value: 'top', label: 'T' },
+  { value: 'bottom', label: 'B' },
 ] as const;
 
 function getDoorSide(room: RoomVisual): string {
@@ -115,21 +114,22 @@ export const MapEditor: React.FC<MapEditorProps> = ({ isOpen, onClose, scene }) 
     item: DecorationItem | FurnitureItem | null;
   }>({ category: null, index: -1, item: null });
   const [selectedRoom, setSelectedRoom] = useState<{ index: number; room: RoomVisual | null }>({ index: -1, room: null });
-  const [itemCount, setItemCount] = useState(0);
   const [undoStack, setUndoStack] = useState<string[]>([]);
+  const [redoStack, setRedoStack] = useState<string[]>([]);
   const [paletteTab, setPaletteTab] = useState<PaletteTab>('all');
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [placeMode, setPlaceMode] = useState<PlaceMode>('item');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const pushUndo = useCallback(() => {
     setUndoStack(prev => [...prev.slice(-19), exportMapConfigJSON()]);
+    setRedoStack([]);
   }, []);
 
   useEffect(() => {
     if (!scene) return;
     scene.setEditMode(isOpen);
     if (isOpen) {
-      const cfg = getMapConfig();
-      setItemCount(cfg.decorations.length + cfg.furniture.length + cfg.rooms.length);
       scene.onEditorSelect = (category, index, item) => {
         setSelection({ category, index, item });
       };
@@ -146,20 +146,20 @@ export const MapEditor: React.FC<MapEditorProps> = ({ isOpen, onClose, scene }) 
 
   useEffect(() => {
     if (!scene || !isOpen) return;
-    if (tool === 'place' && selectedItem) {
-      scene.setEditorPlaceTool(selectedItem.category, selectedItem.type);
-      scene.setEditorToolMode('items');
-    } else if (tool === 'room') {
+    if (tool === 'place' && placeMode === 'room') {
       scene.setEditorPlaceTool(null, null);
       scene.setEditorToolMode('room');
-    } else if (tool === 'desk') {
+    } else if (tool === 'place' && placeMode === 'desk') {
       scene.setEditorPlaceTool(null, null);
       scene.setEditorToolMode('desk');
+    } else if (tool === 'place' && selectedItem) {
+      scene.setEditorPlaceTool(selectedItem.category, selectedItem.type);
+      scene.setEditorToolMode('items');
     } else {
       scene.setEditorPlaceTool(null, null);
       scene.setEditorToolMode('items');
     }
-  }, [tool, selectedItem, scene, isOpen]);
+  }, [tool, selectedItem, placeMode, scene, isOpen]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -169,52 +169,65 @@ export const MapEditor: React.FC<MapEditorProps> = ({ isOpen, onClose, scene }) 
         if (selection.index >= 0 || selectedRoom.index >= 0) {
           pushUndo();
           scene?.editorDeleteSelected();
-          refreshCount();
           setSelectedRoom({ index: -1, room: null });
         }
       }
       if (e.key === 'Escape') {
-        if (tool === 'place' || tool === 'room' || tool === 'desk') {
+        if (paletteOpen) {
+          setPaletteOpen(false);
+        } else if (tool === 'place') {
           setTool('select');
           setSelectedItem(null);
+          setPlaceMode('item');
+          setPaletteOpen(false);
         } else {
           scene?.editorDeselect();
           setSelection({ category: null, index: -1, item: null });
           setSelectedRoom({ index: -1, room: null });
         }
       }
-      if (e.key === 'z' && (e.metaKey || e.ctrlKey)) {
+      if (e.key === 'z' && (e.metaKey || e.ctrlKey) && !e.shiftKey) {
         handleUndo();
+      }
+      if ((e.key === 'z' && (e.metaKey || e.ctrlKey) && e.shiftKey) || (e.key === 'y' && (e.metaKey || e.ctrlKey))) {
+        handleRedo();
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [isOpen, selection, selectedRoom, tool, undoStack, scene]);
+  }, [isOpen, selection, selectedRoom, tool, undoStack, redoStack, scene, paletteOpen]);
 
-  const refreshCount = useCallback(() => {
-    const cfg = getMapConfig();
-    setItemCount(cfg.decorations.length + cfg.furniture.length + cfg.rooms.length);
-  }, []);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    const id = setInterval(refreshCount, 500);
-    return () => clearInterval(id);
-  }, [isOpen, refreshCount]);
 
   const handleSelectPaletteItem = useCallback((item: ItemDef) => {
     pushUndo();
     setSelectedItem(item);
+    setPlaceMode('item');
     setTool('place');
+    setPaletteOpen(false);
     scene?.editorDeselect();
     setSelection({ category: null, index: -1, item: null });
     setSelectedRoom({ index: -1, room: null });
   }, [scene, pushUndo]);
 
+  const handleSelectPlaceTool = useCallback((mode: PlaceMode) => {
+    setPlaceMode(mode);
+    setSelectedItem(null);
+    setTool('place');
+    setPaletteOpen(false);
+    scene?.editorDeselect();
+    setSelection({ category: null, index: -1, item: null });
+    setSelectedRoom({ index: -1, room: null });
+  }, [scene]);
+
   const handleToolChange = useCallback((t: EditorTool) => {
     setTool(t);
-    if (t !== 'place') {
+    if (t === 'place') {
+      setPaletteOpen(true);
+      setPlaceMode('item');
+    } else {
+      setPaletteOpen(false);
       setSelectedItem(null);
+      setPlaceMode('item');
       scene?.setEditorPlaceTool(null, null);
     }
   }, [scene]);
@@ -225,19 +238,29 @@ export const MapEditor: React.FC<MapEditorProps> = ({ isOpen, onClose, scene }) 
     scene?.editorDeleteSelected();
     setSelection({ category: null, index: -1, item: null });
     setSelectedRoom({ index: -1, room: null });
-    refreshCount();
-  }, [selection, selectedRoom, scene, pushUndo, refreshCount]);
+  }, [selection, selectedRoom, scene, pushUndo]);
 
   const handleUndo = useCallback(() => {
     if (undoStack.length === 0) return;
+    setRedoStack(prev => [...prev.slice(-19), exportMapConfigJSON()]);
     const prev = undoStack[undoStack.length - 1];
     setUndoStack(s => s.slice(0, -1));
     importMapConfigJSON(prev);
-    refreshCount();
     scene?.editorDeselect();
     setSelection({ category: null, index: -1, item: null });
     setSelectedRoom({ index: -1, room: null });
-  }, [undoStack, refreshCount, scene]);
+  }, [undoStack, scene]);
+
+  const handleRedo = useCallback(() => {
+    if (redoStack.length === 0) return;
+    setUndoStack(prev => [...prev.slice(-19), exportMapConfigJSON()]);
+    const next = redoStack[redoStack.length - 1];
+    setRedoStack(s => s.slice(0, -1));
+    importMapConfigJSON(next);
+    scene?.editorDeselect();
+    setSelection({ category: null, index: -1, item: null });
+    setSelectedRoom({ index: -1, room: null });
+  }, [redoStack, scene]);
 
   const handleExport = useCallback(() => {
     const json = exportMapConfigJSON();
@@ -259,11 +282,10 @@ export const MapEditor: React.FC<MapEditorProps> = ({ isOpen, onClose, scene }) 
     const reader = new FileReader();
     reader.onload = () => {
       importMapConfigJSON(reader.result as string);
-      refreshCount();
     };
     reader.readAsText(file);
     e.target.value = '';
-  }, [pushUndo, refreshCount]);
+  }, [pushUndo]);
 
   // Room editing handlers
   const handleRoomNameChange = useCallback((name: string) => {
@@ -309,7 +331,8 @@ export const MapEditor: React.FC<MapEditorProps> = ({ isOpen, onClose, scene }) 
     setSelectedRoom(prev => prev.room ? { ...prev, room: { ...prev.room, doors: [newDoor] } } : prev);
   }, [selectedRoom.index, selectedRoom.room, scene, pushUndo]);
 
-  const filteredItems = paletteTab === 'all' ? ALL_ITEMS
+  const filteredItems = paletteTab === 'tools' ? []
+    : paletteTab === 'all' ? ALL_ITEMS
     : paletteTab === 'decorations' ? DECORATION_ITEMS
     : FURNITURE_ITEMS;
 
@@ -317,30 +340,18 @@ export const MapEditor: React.FC<MapEditorProps> = ({ isOpen, onClose, scene }) 
 
   const hasRoomSelected = selectedRoom.index >= 0 && selectedRoom.room;
   const hasItemSelected = selection.item !== null;
+  const hasSelection = hasRoomSelected || hasItemSelected;
 
   return (
-    <div style={s.overlay} data-editor-panel>
-      <div style={s.panel}>
-        {/* Header */}
-        <div style={s.header}>
-          <div style={s.headerLeft}>
-            <span style={s.headerIcon}>&#9998;</span>
-            <span style={s.headerTitle}>Map Editor</span>
-            <span style={s.badge}>{itemCount}</span>
-          </div>
-          <button style={s.closeBtn} onClick={onClose} title="Close editor (items are saved)">
-            &#x2715;
-          </button>
-        </div>
-
-        {/* Toolbar */}
-        <div style={s.toolbar}>
+    <>
+      {/* ── Bottom toolbar ───────────────────────────────────────── */}
+      <div style={s.bottomBar} data-editor-panel>
+        {/* Tool buttons */}
+        <div style={s.toolGroup}>
           {([
-            ['select', '\u{1F446}', 'Select'],
-            ['place', '\u{2795}', 'Place'],
+            ['select', '\u{1F446}', 'Select (V)'],
+            ['place', '\u{2795}', 'Place Item'],
             ['eraser', '\u{1F6AB}', 'Eraser'],
-            ['room', '\u{1F3D7}', 'Room'],
-            ['desk', '\u{1F4CB}', 'Desk'],
           ] as [EditorTool, string, string][]).map(([t, icon, label]) => (
             <button
               key={t}
@@ -348,169 +359,71 @@ export const MapEditor: React.FC<MapEditorProps> = ({ isOpen, onClose, scene }) 
               onClick={() => handleToolChange(t)}
               title={label}
             >
-              <span style={{ fontSize: '14px' }}>{icon}</span>
-              <span style={{ fontSize: '9px' }}>{label}</span>
+              <span style={{ fontSize: '16px' }}>{icon}</span>
             </button>
           ))}
-          <div style={{ flex: 1 }} />
-          <button
-            style={{ ...s.iconBtn, opacity: undoStack.length ? 1 : 0.3 }}
-            onClick={handleUndo}
-            disabled={!undoStack.length}
-            title="Undo (Ctrl+Z)"
-          >
-            &#x21A9;
-          </button>
         </div>
 
-        {/* Room Builder Help */}
-        {tool === 'room' && (
-          <div style={s.section}>
-            <div style={s.sectionTitle}>Room Builder</div>
-            <div style={s.hint}>
-              Click and drag on the map to create a room.<br />
-              Minimum size: 4x4 tiles. Red = overlap detected.<br />
-              Use Select tool to edit room properties.
-            </div>
-          </div>
+        <div style={s.divider} />
+
+        {/* Undo / Redo */}
+        <button
+          style={{ ...s.toolBtn, opacity: undoStack.length ? 1 : 0.3 }}
+          onClick={handleUndo}
+          disabled={!undoStack.length}
+          title="Undo (Ctrl+Z)"
+        >
+          <span style={{ fontSize: '16px' }}>&#x21A9;</span>
+        </button>
+        <button
+          style={{ ...s.toolBtn, opacity: redoStack.length ? 1 : 0.3 }}
+          onClick={handleRedo}
+          disabled={!redoStack.length}
+          title="Redo (Ctrl+Shift+Z)"
+        >
+          <span style={{ fontSize: '16px' }}>&#x21AA;</span>
+        </button>
+
+        {/* Export / Import */}
+        <button style={s.toolBtn} onClick={handleExport} title="Export map">
+          <span style={{ fontSize: '14px' }}>&#x1F4E5;</span>
+        </button>
+        <button style={s.toolBtn} onClick={handleImport} title="Import map">
+          <span style={{ fontSize: '14px' }}>&#x1F4E4;</span>
+        </button>
+        <input ref={fileInputRef} type="file" accept=".json" style={{ display: 'none' }} onChange={handleFileChange} />
+
+        <div style={s.divider} />
+
+        {/* Active tool label */}
+        {selectedItem && (
+          <span style={s.activeLabel}>Placing: {selectedItem.label}</span>
+        )}
+        {tool === 'place' && placeMode === 'room' && !selectedItem && (
+          <span style={s.activeLabel}>Drag to build room</span>
+        )}
+        {tool === 'place' && placeMode === 'desk' && !selectedItem && (
+          <span style={s.activeLabel}>Click to place desk</span>
         )}
 
-        {/* Desk Tool Help */}
-        {tool === 'desk' && (
-          <div style={s.section}>
-            <div style={s.sectionTitle}>Desk Placement</div>
-            <div style={s.hint}>
-              Click on the map to place a 2-tile desk.<br />
-              Desks can be claimed by users who sit at them.
-            </div>
-          </div>
-        )}
+        <div style={{ flex: 1 }} />
 
-        {/* Room Editing Panel */}
-        {hasRoomSelected && selectedRoom.room && (
-          <div style={s.section}>
-            <div style={s.sectionTitle}>Room Properties</div>
+        {/* Close */}
+        <button style={s.closeBtn} onClick={onClose} title="Close editor">
+          &#x2715; Close
+        </button>
+      </div>
 
-            {/* Name */}
-            <div style={s.fieldRow}>
-              <label style={s.fieldLabel}>Name</label>
-              <input
-                style={s.fieldInput}
-                value={selectedRoom.room.name}
-                onChange={(e) => handleRoomNameChange(e.target.value)}
-              />
-            </div>
-
-            {/* Sub Label */}
-            <div style={s.fieldRow}>
-              <label style={s.fieldLabel}>Subtitle</label>
-              <input
-                style={s.fieldInput}
-                value={selectedRoom.room.subLabel || ''}
-                onChange={(e) => handleRoomSubLabelChange(e.target.value)}
-                placeholder="Optional description"
-              />
-            </div>
-
-            {/* Type */}
-            <div style={s.fieldRow}>
-              <label style={s.fieldLabel}>Type</label>
-              <div style={s.chipRow}>
-                {ROOM_TYPES.map((rt) => (
-                  <button
-                    key={rt.value}
-                    style={{
-                      ...s.chip,
-                      ...(selectedRoom.room!.type === rt.value ? s.chipActive : {}),
-                    }}
-                    onClick={() => handleRoomTypeChange(rt.value)}
-                  >
-                    {rt.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Color */}
-            <div style={s.fieldRow}>
-              <label style={s.fieldLabel}>Color</label>
-              <div style={s.chipRow}>
-                {ROOM_COLOR_PRESETS.map((preset) => (
-                  <button
-                    key={preset.label}
-                    style={{
-                      ...s.colorChip,
-                      background: '#' + preset.wall.face.toString(16).padStart(6, '0'),
-                      boxShadow: selectedRoom.room!.wall.face === preset.wall.face
-                        ? '0 0 0 2px #fff'
-                        : 'none',
-                    }}
-                    onClick={() => handleRoomColorChange(preset)}
-                    title={preset.label}
-                  />
-                ))}
-              </div>
-            </div>
-
-            {/* Door Side */}
-            <div style={s.fieldRow}>
-              <label style={s.fieldLabel}>Door</label>
-              <div style={s.chipRow}>
-                {DOOR_SIDES.map((ds) => (
-                  <button
-                    key={ds.value}
-                    style={{
-                      ...s.chip,
-                      ...(getDoorSide(selectedRoom.room!) === ds.value ? s.chipActive : {}),
-                    }}
-                    onClick={() => handleDoorSideChange(ds.value)}
-                  >
-                    {ds.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Sound Isolated */}
-            <div style={s.fieldRow}>
-              <label style={s.fieldLabel}>Sound</label>
-              <button
-                style={{
-                  ...s.chip,
-                  ...(selectedRoom.room.soundIsolated ? s.chipActive : {}),
-                  width: 'auto',
-                }}
-                onClick={() => handleRoomSoundChange(!selectedRoom.room!.soundIsolated)}
-              >
-                {selectedRoom.room.soundIsolated ? 'Isolated' : 'Open'}
-              </button>
-            </div>
-
-            {/* Info */}
-            <div style={s.propGrid}>
-              <span style={s.propLabel}>Position</span>
-              <span style={s.propValue}>({selectedRoom.room.walls.x}, {selectedRoom.room.walls.y})</span>
-              <span style={s.propLabel}>Size</span>
-              <span style={s.propValue}>{selectedRoom.room.walls.w + 1}x{selectedRoom.room.walls.h + 1} tiles</span>
-            </div>
-
-            <button style={s.deleteBtn} onClick={handleDeleteSelected}>
-              &#x1F5D1; Delete Room
-            </button>
-          </div>
-        )}
-
-        {/* Item Palette */}
-        {(tool === 'place' || tool === 'select' || tool === 'eraser') && !hasRoomSelected && (
-          <div style={s.section}>
-            <div style={s.sectionTitle}>
-              {tool === 'place' ? 'Click an item, then click on the map' : 'Items'}
-            </div>
+      {/* ── Item palette popover (above toolbar) ─────────────────── */}
+      {paletteOpen && (
+        <div style={s.palettePopover} data-editor-panel>
+          <div style={s.paletteHeader}>
             <div style={s.tabRow}>
               {([
                 ['all', 'All'],
                 ['decorations', 'Decor'],
                 ['furniture', 'Furniture'],
+                ['tools', 'Tools'],
               ] as [PaletteTab, string][]).map(([tab, label]) => (
                 <button
                   key={tab}
@@ -521,228 +434,292 @@ export const MapEditor: React.FC<MapEditorProps> = ({ isOpen, onClose, scene }) 
                 </button>
               ))}
             </div>
-            <div style={s.palette}>
-              {filteredItems.map((item) => (
+            <button style={s.paletteCloseBtn} onClick={() => setPaletteOpen(false)}>&#x2715;</button>
+          </div>
+          <div style={s.paletteGrid}>
+            {/* Room & Desk tools — shown in All and Tools tabs */}
+            {(paletteTab === 'all' || paletteTab === 'tools') && (
+              <>
                 <button
-                  key={`${item.category}-${item.type}`}
                   style={{
                     ...s.paletteItem,
-                    ...(selectedItem?.type === item.type && selectedItem?.category === item.category
-                      ? s.paletteItemActive : {}),
+                    ...(placeMode === 'room' && !selectedItem ? s.paletteItemActive : {}),
                   }}
-                  onClick={() => handleSelectPaletteItem(item)}
-                  title={`${item.label} — ${item.desc}`}
+                  onClick={() => handleSelectPlaceTool('room')}
+                  title="Build Room — Drag to create a room"
                 >
-                  <span style={{ fontSize: '18px', lineHeight: 1 }}>{item.icon}</span>
-                  <span style={s.paletteLabel}>{item.label}</span>
+                  <span style={{ fontSize: '20px', lineHeight: 1 }}>{'\u{1F3D7}'}</span>
+                  <span style={s.paletteLabel}>Room</span>
                 </button>
-              ))}
-            </div>
+                <button
+                  style={{
+                    ...s.paletteItem,
+                    ...(placeMode === 'desk' && !selectedItem ? s.paletteItemActive : {}),
+                  }}
+                  onClick={() => handleSelectPlaceTool('desk')}
+                  title="Place Desk — Click to place a desk"
+                >
+                  <span style={{ fontSize: '20px', lineHeight: 1 }}>{'\u{1F4CB}'}</span>
+                  <span style={s.paletteLabel}>Desk</span>
+                </button>
+              </>
+            )}
+            {filteredItems.map((item) => (
+              <button
+                key={`${item.category}-${item.type}`}
+                style={{
+                  ...s.paletteItem,
+                  ...(selectedItem?.type === item.type && selectedItem?.category === item.category
+                    ? s.paletteItemActive : {}),
+                }}
+                onClick={() => handleSelectPaletteItem(item)}
+                title={`${item.label} — ${item.desc}`}
+              >
+                <span style={{ fontSize: '20px', lineHeight: 1 }}>{item.icon}</span>
+                <span style={s.paletteLabel}>{item.label}</span>
+              </button>
+            ))}
           </div>
-        )}
+        </div>
+      )}
 
-        {/* Selected item properties */}
-        {hasItemSelected && !hasRoomSelected && (
-          <div style={s.section}>
-            <div style={s.sectionTitle}>Selected Item</div>
-            <div style={s.propGrid}>
-              <span style={s.propLabel}>Type</span>
-              <span style={s.propValue}>{(selection.item as any).type}</span>
-              <span style={s.propLabel}>Position</span>
-              <span style={s.propValue}>
+      {/* ── Selection / Properties panel (top-right floating) ──── */}
+      {hasSelection && (
+        <div style={s.propsPanel} data-editor-panel>
+          {/* Room editing */}
+          {hasRoomSelected && selectedRoom.room && (
+            <>
+              <div style={s.propsHeader}>
+                <span style={s.propsTitle}>Room</span>
+                <button style={s.propsCloseBtn} onClick={() => {
+                  scene?.editorDeselect();
+                  setSelectedRoom({ index: -1, room: null });
+                }}>&#x2715;</button>
+              </div>
+
+              <div style={s.fieldRow}>
+                <label style={s.fieldLabel}>Name</label>
+                <input
+                  style={s.fieldInput}
+                  value={selectedRoom.room.name}
+                  onChange={(e) => handleRoomNameChange(e.target.value)}
+                />
+              </div>
+
+              <div style={s.fieldRow}>
+                <label style={s.fieldLabel}>Sub</label>
+                <input
+                  style={s.fieldInput}
+                  value={selectedRoom.room.subLabel || ''}
+                  onChange={(e) => handleRoomSubLabelChange(e.target.value)}
+                  placeholder="Description"
+                />
+              </div>
+
+              <div style={s.fieldRow}>
+                <label style={s.fieldLabel}>Type</label>
+                <div style={s.chipRow}>
+                  {ROOM_TYPES.map((rt) => (
+                    <button
+                      key={rt.value}
+                      style={{ ...s.chip, ...(selectedRoom.room!.type === rt.value ? s.chipActive : {}) }}
+                      onClick={() => handleRoomTypeChange(rt.value)}
+                    >
+                      {rt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div style={s.fieldRow}>
+                <label style={s.fieldLabel}>Color</label>
+                <div style={s.chipRow}>
+                  {ROOM_COLOR_PRESETS.map((preset) => (
+                    <button
+                      key={preset.label}
+                      style={{
+                        ...s.colorChip,
+                        background: '#' + preset.wall.face.toString(16).padStart(6, '0'),
+                        boxShadow: selectedRoom.room!.wall.face === preset.wall.face ? '0 0 0 2px #7EB8F0' : 'none',
+                      }}
+                      onClick={() => handleRoomColorChange(preset)}
+                      title={preset.label}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              <div style={s.fieldRow}>
+                <label style={s.fieldLabel}>Door</label>
+                <div style={s.chipRow}>
+                  {DOOR_SIDES.map((ds) => (
+                    <button
+                      key={ds.value}
+                      style={{ ...s.chip, ...(getDoorSide(selectedRoom.room!) === ds.value ? s.chipActive : {}) }}
+                      onClick={() => handleDoorSideChange(ds.value)}
+                    >
+                      {ds.label}
+                    </button>
+                  ))}
+                  <button
+                    style={{ ...s.chip, ...(selectedRoom.room.soundIsolated ? s.chipActive : {}) }}
+                    onClick={() => handleRoomSoundChange(!selectedRoom.room!.soundIsolated)}
+                    title="Sound isolation"
+                  >
+                    {selectedRoom.room.soundIsolated ? 'Isolated' : 'Open'}
+                  </button>
+                </div>
+              </div>
+
+              <div style={s.propsMeta}>
+                ({selectedRoom.room.walls.x},{selectedRoom.room.walls.y}) {selectedRoom.room.walls.w + 1}x{selectedRoom.room.walls.h + 1}
+              </div>
+
+              <button style={s.deleteBtn} onClick={handleDeleteSelected}>Delete Room</button>
+            </>
+          )}
+
+          {/* Item properties */}
+          {hasItemSelected && !hasRoomSelected && (
+            <>
+              <div style={s.propsHeader}>
+                <span style={s.propsTitle}>{(selection.item as any).type}</span>
+                <button style={s.propsCloseBtn} onClick={() => {
+                  scene?.editorDeselect();
+                  setSelection({ category: null, index: -1, item: null });
+                }}>&#x2715;</button>
+              </div>
+              <div style={s.propsMeta}>
                 ({selection.item!.x}, {selection.item!.y})
-              </span>
-              {(selection.item as any).w && (
-                <>
-                  <span style={s.propLabel}>Width</span>
-                  <span style={s.propValue}>{(selection.item as any).w} tiles</span>
-                </>
-              )}
-            </div>
-            <button style={s.deleteBtn} onClick={handleDeleteSelected}>
-              &#x1F5D1; Delete Item
-            </button>
-            <div style={s.hint}>Drag to move. Press Delete to remove.</div>
-          </div>
-        )}
-
-        {/* Help text */}
-        {tool === 'select' && !hasItemSelected && !hasRoomSelected && (
-          <div style={s.section}>
-            <div style={s.hint}>
-              Click items or rooms to select them.<br />
-              Drag items to reposition. Scroll to zoom.<br />
-              Right-click drag to pan the camera.<br />
-              Click interactive items in play mode to toggle.
-            </div>
-          </div>
-        )}
-
-        {/* Import/Export */}
-        <div style={s.section}>
-          <div style={s.sectionTitle}>Map Data</div>
-          <div style={s.actionRow}>
-            <button style={s.actionBtn} onClick={handleExport}>
-              &#x1F4E5; Export
-            </button>
-            <button style={s.actionBtn} onClick={handleImport}>
-              &#x1F4E4; Import
-            </button>
-          </div>
-          <input ref={fileInputRef} type="file" accept=".json" style={{ display: 'none' }} onChange={handleFileChange} />
+                {(selection.item as any).w ? ` ${(selection.item as any).w}w` : ''}
+              </div>
+              <button style={s.deleteBtn} onClick={handleDeleteSelected}>Delete</button>
+            </>
+          )}
         </div>
-
-        {/* Keyboard shortcuts reference */}
-        <div style={s.shortcuts}>
-          <span><b>Del</b> Delete</span>
-          <span><b>Esc</b> Deselect</span>
-          <span><b>Ctrl+Z</b> Undo</span>
-          <span><b>Scroll</b> Zoom</span>
-          <span><b>RClick</b> Pan</span>
-        </div>
-      </div>
-    </div>
+      )}
+    </>
   );
 };
 
 // ── Styles ──────────────────────────────────────────────────────────────
 const s: Record<string, React.CSSProperties> = {
-  overlay: {
+  // Bottom toolbar bar
+  bottomBar: {
     position: 'absolute',
-    top: '56px',
-    left: '12px',
+    bottom: '12px',
+    left: '50%',
+    transform: 'translateX(-50%)',
     zIndex: 200,
     pointerEvents: 'auto',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '4px',
+    padding: '6px 12px',
+    background: 'rgba(10,10,22,0.92)',
+    backdropFilter: 'blur(20px)',
+    borderRadius: '14px',
+    border: '1px solid rgba(255,255,255,0.08)',
+    boxShadow: '0 4px 24px rgba(0,0,0,0.4)',
+    color: '#fff',
   },
-  panel: {
-    width: '300px',
-    maxHeight: 'calc(100vh - 80px)',
-    overflowY: 'auto',
+  toolGroup: {
+    display: 'flex',
+    gap: '2px',
+  },
+  toolBtn: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '36px',
+    height: '36px',
+    borderRadius: '10px',
+    border: '1px solid rgba(255,255,255,0.06)',
+    background: 'rgba(255,255,255,0.02)',
+    color: 'rgba(255,255,255,0.6)',
+    cursor: 'pointer',
+    transition: 'all 0.12s',
+  },
+  toolBtnActive: {
+    background: 'rgba(74,144,217,0.25)',
+    borderColor: 'rgba(74,144,217,0.5)',
+    color: '#7EB8F0',
+    boxShadow: '0 0 8px rgba(74,144,217,0.2)',
+  },
+  divider: {
+    width: '1px',
+    height: '24px',
+    background: 'rgba(255,255,255,0.08)',
+    margin: '0 4px',
+  },
+  activeLabel: {
+    fontSize: '11px',
+    color: 'rgba(255,255,255,0.5)',
+    marginLeft: '4px',
+    whiteSpace: 'nowrap',
+  },
+  closeBtn: {
+    padding: '6px 12px',
+    borderRadius: '8px',
+    border: '1px solid rgba(255,80,80,0.25)',
+    background: 'rgba(255,80,80,0.1)',
+    color: '#ff8888',
+    fontSize: '11px',
+    cursor: 'pointer',
+    fontWeight: 600,
+    whiteSpace: 'nowrap',
+  },
+
+  // Palette popover
+  palettePopover: {
+    position: 'absolute',
+    bottom: '68px',
+    left: '50%',
+    transform: 'translateX(-50%)',
+    zIndex: 201,
+    pointerEvents: 'auto',
+    width: '380px',
+    maxHeight: '320px',
     background: 'rgba(10,10,22,0.95)',
     backdropFilter: 'blur(20px)',
-    borderRadius: '16px',
+    borderRadius: '14px',
     border: '1px solid rgba(255,255,255,0.08)',
     boxShadow: '0 8px 40px rgba(0,0,0,0.5)',
     color: '#fff',
     display: 'flex',
     flexDirection: 'column',
+    overflow: 'hidden',
   },
-  header: {
-    padding: '12px 16px',
+  paletteHeader: {
     display: 'flex',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    padding: '8px 10px',
     borderBottom: '1px solid rgba(255,255,255,0.06)',
+    gap: '8px',
   },
-  headerLeft: { display: 'flex', alignItems: 'center', gap: '8px' },
-  headerIcon: { fontSize: '16px' },
-  headerTitle: { fontWeight: 700, fontSize: '14px' },
-  badge: {
-    fontSize: '10px',
-    background: 'rgba(74,144,217,0.2)',
-    color: '#7EB8F0',
-    padding: '2px 8px',
-    borderRadius: '10px',
-    fontWeight: 600,
-  },
-  closeBtn: {
-    background: 'rgba(255,80,80,0.12)',
-    border: '1px solid rgba(255,80,80,0.2)',
-    color: 'rgba(255,120,120,0.8)',
-    borderRadius: '8px',
-    width: '28px',
-    height: '28px',
+  paletteCloseBtn: {
+    background: 'none',
+    border: 'none',
+    color: 'rgba(255,255,255,0.3)',
     cursor: 'pointer',
     fontSize: '12px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
+    padding: '4px',
+    marginLeft: 'auto',
   },
-  toolbar: {
-    display: 'flex',
-    gap: '3px',
-    padding: '8px 12px',
-    borderBottom: '1px solid rgba(255,255,255,0.04)',
-    alignItems: 'center',
-  },
-  toolBtn: {
-    display: 'flex',
-    flexDirection: 'column' as const,
-    alignItems: 'center',
-    gap: '1px',
-    padding: '5px 8px',
-    borderRadius: '10px',
-    border: '1px solid rgba(255,255,255,0.06)',
-    background: 'rgba(255,255,255,0.02)',
-    color: 'rgba(255,255,255,0.6)',
-    cursor: 'pointer',
-    transition: 'all 0.15s',
-  },
-  toolBtnActive: {
-    background: 'rgba(74,144,217,0.2)',
-    borderColor: 'rgba(74,144,217,0.4)',
-    color: '#7EB8F0',
-  },
-  iconBtn: {
-    background: 'rgba(255,255,255,0.04)',
-    border: '1px solid rgba(255,255,255,0.08)',
-    color: 'rgba(255,255,255,0.6)',
-    borderRadius: '8px',
-    width: '32px',
-    height: '32px',
-    cursor: 'pointer',
-    fontSize: '14px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  section: {
-    padding: '10px 14px',
-    borderBottom: '1px solid rgba(255,255,255,0.04)',
-  },
-  sectionTitle: {
-    fontSize: '10px',
-    color: 'rgba(255,255,255,0.4)',
-    textTransform: 'uppercase' as const,
-    letterSpacing: '0.5px',
-    marginBottom: '8px',
-    fontWeight: 600,
-  },
-  tabRow: {
-    display: 'flex',
-    gap: '4px',
-    marginBottom: '8px',
-  },
-  tabBtn: {
-    flex: 1,
-    padding: '4px 6px',
-    borderRadius: '6px',
-    border: '1px solid rgba(255,255,255,0.06)',
-    background: 'rgba(255,255,255,0.02)',
-    color: 'rgba(255,255,255,0.4)',
-    cursor: 'pointer',
-    fontSize: '9px',
-    fontWeight: 600,
-    textAlign: 'center' as const,
-  },
-  tabBtnActive: {
-    background: 'rgba(74,144,217,0.15)',
-    borderColor: 'rgba(74,144,217,0.3)',
-    color: '#7EB8F0',
-  },
-  palette: {
+  paletteGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(4, 1fr)',
-    gap: '4px',
-    maxHeight: '240px',
-    overflowY: 'auto' as const,
+    gridTemplateColumns: 'repeat(7, 1fr)',
+    gap: '3px',
+    padding: '8px',
+    overflowY: 'auto',
+    flex: 1,
   },
   paletteItem: {
     display: 'flex',
     flexDirection: 'column' as const,
     alignItems: 'center',
     gap: '2px',
-    padding: '5px 2px',
+    padding: '6px 2px',
     borderRadius: '8px',
     border: '1px solid rgba(255,255,255,0.04)',
     background: 'rgba(255,255,255,0.02)',
@@ -759,84 +736,100 @@ const s: Record<string, React.CSSProperties> = {
   paletteLabel: {
     fontSize: '7px',
     textAlign: 'center' as const,
-    lineHeight: 1.2,
+    lineHeight: 1.1,
     maxWidth: '100%',
     overflow: 'hidden',
   },
-  propGrid: {
-    display: 'grid',
-    gridTemplateColumns: '70px 1fr',
-    gap: '4px 8px',
-    marginBottom: '8px',
+  tabRow: {
+    display: 'flex',
+    gap: '4px',
   },
-  propLabel: {
+  tabBtn: {
+    padding: '4px 10px',
+    borderRadius: '6px',
+    border: '1px solid rgba(255,255,255,0.06)',
+    background: 'rgba(255,255,255,0.02)',
+    color: 'rgba(255,255,255,0.4)',
+    cursor: 'pointer',
     fontSize: '10px',
-    color: 'rgba(255,255,255,0.35)',
     fontWeight: 600,
   },
-  propValue: {
+  tabBtnActive: {
+    background: 'rgba(74,144,217,0.15)',
+    borderColor: 'rgba(74,144,217,0.3)',
+    color: '#7EB8F0',
+  },
+
+  // Properties panel (floating top-right)
+  propsPanel: {
+    position: 'absolute',
+    top: '60px',
+    right: '12px',
+    zIndex: 200,
+    pointerEvents: 'auto',
+    width: '240px',
+    background: 'rgba(10,10,22,0.92)',
+    backdropFilter: 'blur(20px)',
+    borderRadius: '12px',
+    border: '1px solid rgba(255,255,255,0.08)',
+    boxShadow: '0 4px 24px rgba(0,0,0,0.4)',
+    color: '#fff',
+    padding: '10px 12px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '6px',
+  },
+  propsHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '2px',
+  },
+  propsTitle: {
+    fontSize: '12px',
+    fontWeight: 700,
+    color: 'rgba(255,255,255,0.85)',
+  },
+  propsCloseBtn: {
+    background: 'none',
+    border: 'none',
+    color: 'rgba(255,255,255,0.3)',
+    cursor: 'pointer',
     fontSize: '11px',
-    color: 'rgba(255,255,255,0.8)',
+    padding: '2px 4px',
+  },
+  propsMeta: {
+    fontSize: '9px',
+    color: 'rgba(255,255,255,0.25)',
   },
   deleteBtn: {
     width: '100%',
-    padding: '6px',
-    borderRadius: '8px',
+    padding: '5px',
+    borderRadius: '6px',
     border: '1px solid rgba(255,80,80,0.25)',
     background: 'rgba(255,80,80,0.1)',
     color: '#ff8888',
-    fontSize: '11px',
-    cursor: 'pointer',
-    fontWeight: 600,
-    marginBottom: '6px',
-  },
-  hint: {
     fontSize: '10px',
-    color: 'rgba(255,255,255,0.25)',
-    lineHeight: 1.5,
-  },
-  actionRow: {
-    display: 'flex',
-    gap: '6px',
-  },
-  actionBtn: {
-    flex: 1,
-    padding: '7px 12px',
-    borderRadius: '8px',
-    border: '1px solid rgba(255,255,255,0.1)',
-    background: 'linear-gradient(135deg, rgba(74,144,217,0.12), rgba(91,111,217,0.12))',
-    color: '#7EB8F0',
-    fontSize: '11px',
     cursor: 'pointer',
     fontWeight: 600,
-    textAlign: 'center' as const,
+    marginTop: '2px',
   },
-  shortcuts: {
-    display: 'flex',
-    gap: '10px',
-    padding: '8px 14px',
-    fontSize: '9px',
-    color: 'rgba(255,255,255,0.2)',
-    flexWrap: 'wrap' as const,
-  },
-  // Room editing styles
   fieldRow: {
     display: 'flex',
     alignItems: 'center',
-    gap: '8px',
-    marginBottom: '8px',
+    gap: '6px',
   },
   fieldLabel: {
-    fontSize: '10px',
-    color: 'rgba(255,255,255,0.4)',
+    fontSize: '9px',
+    color: 'rgba(255,255,255,0.35)',
     fontWeight: 600,
-    minWidth: '50px',
+    minWidth: '34px',
     flexShrink: 0,
   },
   fieldInput: {
     flex: 1,
-    padding: '4px 8px',
-    borderRadius: '6px',
+    padding: '3px 6px',
+    borderRadius: '5px',
     border: '1px solid rgba(255,255,255,0.1)',
     background: 'rgba(255,255,255,0.05)',
     color: '#fff',
@@ -846,12 +839,12 @@ const s: Record<string, React.CSSProperties> = {
   },
   chipRow: {
     display: 'flex',
-    gap: '4px',
+    gap: '3px',
     flexWrap: 'wrap' as const,
   },
   chip: {
-    padding: '3px 8px',
-    borderRadius: '6px',
+    padding: '2px 6px',
+    borderRadius: '5px',
     border: '1px solid rgba(255,255,255,0.08)',
     background: 'rgba(255,255,255,0.03)',
     color: 'rgba(255,255,255,0.5)',
@@ -865,9 +858,9 @@ const s: Record<string, React.CSSProperties> = {
     color: '#7EB8F0',
   },
   colorChip: {
-    width: '20px',
-    height: '20px',
-    borderRadius: '6px',
+    width: '18px',
+    height: '18px',
+    borderRadius: '5px',
     border: '1px solid rgba(255,255,255,0.15)',
     cursor: 'pointer',
     padding: 0,

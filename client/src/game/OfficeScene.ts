@@ -174,11 +174,19 @@ export class OfficeScene extends Phaser.Scene {
     this.cameras.main.setBounds(0, 0, MAP_WIDTH * TILE_SIZE, MAP_HEIGHT * TILE_SIZE);
 
     this.cursors = this.input.keyboard!.createCursorKeys();
+    // Stop Phaser from calling preventDefault on these keys so they work in HTML inputs
+    this.input.keyboard!.removeCapture([
+      Phaser.Input.Keyboard.KeyCodes.UP,
+      Phaser.Input.Keyboard.KeyCodes.DOWN,
+      Phaser.Input.Keyboard.KeyCodes.LEFT,
+      Phaser.Input.Keyboard.KeyCodes.RIGHT,
+      Phaser.Input.Keyboard.KeyCodes.SPACE,
+    ]);
     this.wasd = {
-      W: this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.W),
-      A: this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.A),
-      S: this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.S),
-      D: this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.D),
+      W: this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.W, false),
+      A: this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.A, false),
+      S: this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.S, false),
+      D: this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.D, false),
     };
 
     // Disable game keyboard input when an HTML input/textarea is focused
@@ -191,6 +199,13 @@ export class OfficeScene extends Phaser.Scene {
       }
     });
     document.addEventListener('focusout', () => { enableKeys(); });
+
+    // Clicking the game canvas should blur any focused input and re-enable keys
+    this.input.on('pointerdown', () => {
+      if (document.activeElement && (document.activeElement as HTMLElement).blur) {
+        (document.activeElement as HTMLElement).blur();
+      }
+    });
 
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
       if (this._editMode) return; // Skip desk clicks in edit mode
@@ -1242,10 +1257,13 @@ export class OfficeScene extends Phaser.Scene {
     let dy = 0;
     let newDir: Direction = this.localPlayer.direction;
 
-    if (this.cursors.left.isDown || this.wasd.A.isDown) { dx = -speed; newDir = 'left'; }
-    else if (this.cursors.right.isDown || this.wasd.D.isDown) { dx = speed; newDir = 'right'; }
-    if (this.cursors.up.isDown || this.wasd.W.isDown) { dy = -speed; newDir = 'up'; }
-    else if (this.cursors.down.isDown || this.wasd.S.isDown) { dy = speed; newDir = 'down'; }
+    // Skip movement when keyboard is disabled (e.g. user is typing in chat/input)
+    if (this.input.keyboard!.enabled) {
+      if (this.cursors.left.isDown || this.wasd.A.isDown) { dx = -speed; newDir = 'left'; }
+      else if (this.cursors.right.isDown || this.wasd.D.isDown) { dx = speed; newDir = 'right'; }
+      if (this.cursors.up.isDown || this.wasd.W.isDown) { dy = -speed; newDir = 'up'; }
+      else if (this.cursors.down.isDown || this.wasd.S.isDown) { dy = speed; newDir = 'down'; }
+    }
 
     const isMoving = dx !== 0 || dy !== 0;
 
@@ -1397,7 +1415,6 @@ export class OfficeScene extends Phaser.Scene {
     this.editorGrid.setVisible(on);
     if (on) {
       this.drawEditorGrid();
-      this.cameras.main.stopFollow();
       this.cameras.main.removeBounds();
       this.input.mouse?.disableContextMenu();
       this.input.on('pointermove', this.editorPointerMove, this);
@@ -1724,6 +1741,7 @@ export class OfficeScene extends Phaser.Scene {
     if (pointer.rightButtonDown() || pointer.middleButtonDown()) {
       this.editorPanning = true;
       this.editorPanLast = { x: pointer.x, y: pointer.y };
+      this.cameras.main.stopFollow();
       return;
     }
 
@@ -1785,8 +1803,12 @@ export class OfficeScene extends Phaser.Scene {
       const { tx, ty } = this.editorWorldToTile(pointer);
       this.editorRoomPointerUp(tx, ty);
     }
+    if (this.editorPanning) {
+      this.editorPanning = false;
+      // Resume following the player after panning
+      this.cameras.main.startFollow(this.localAvatar.container, true, 0.1, 0.1);
+    }
     this.editorDragging = false;
-    this.editorPanning = false;
   };
 
   private editorWheel = (_pointer: Phaser.Input.Pointer, _dx: number[], _dy: number[], dz: number): void => {
