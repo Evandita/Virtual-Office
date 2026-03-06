@@ -1,7 +1,9 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import type { Player, Position, Room } from '../types';
-import { TILE_SIZE, MAP_WIDTH, MAP_HEIGHT, ROOMS } from '../types';
-import { ROOM_VISUALS, WORKSPACE_RUG } from '../game/mapConfig';
+import { TILE_SIZE, MAP_WIDTH, MAP_HEIGHT } from '../types';
+import { WORKSPACE_RUG } from '../game/mapConfig';
+import { getMapConfig, subscribeMapConfig } from '../game/mapStore';
+import type { RoomVisual } from '../game/mapConfig';
 
 interface MinimapProps {
   getLocalPosition: () => Position | null;
@@ -13,19 +15,11 @@ interface MinimapProps {
 const SCALE = 4;
 const W = MAP_WIDTH * SCALE;
 const H = MAP_HEIGHT * SCALE;
-const MINIMAP_FPS = 10; // throttle to save CPU
+const MINIMAP_FPS = 10;
 const FRAME_INTERVAL = 1000 / MINIMAP_FPS;
 
-// Derive colors from room visuals config
 function hexToCSS(hex: number): string {
   return '#' + hex.toString(16).padStart(6, '0');
-}
-
-const ROOM_COLORS: Record<string, string> = {};
-const ROOM_BORDER_COLORS: Record<string, string> = {};
-for (const rv of ROOM_VISUALS) {
-  ROOM_COLORS[rv.id] = hexToCSS(rv.floor.base);
-  ROOM_BORDER_COLORS[rv.id] = hexToCSS(rv.wall.top);
 }
 
 const MapIcon = () => (
@@ -44,6 +38,18 @@ export const Minimap: React.FC<MinimapProps> = ({ getLocalPosition, remotePlayer
   remotePlayersRef.current = remotePlayers;
   currentRoomRef.current = currentRoom;
 
+  // Track dynamic rooms from map config
+  const [dynRooms, setDynRooms] = useState<RoomVisual[]>(() => getMapConfig().rooms);
+  useEffect(() => {
+    const unsub = subscribeMapConfig((config) => {
+      setDynRooms([...config.rooms]);
+    });
+    return unsub;
+  }, []);
+
+  const dynRoomsRef = useRef(dynRooms);
+  dynRoomsRef.current = dynRooms;
+
   useEffect(() => {
     let animId: number;
     let lastTime = 0;
@@ -51,7 +57,6 @@ export const Minimap: React.FC<MinimapProps> = ({ getLocalPosition, remotePlayer
     const draw = (time: number) => {
       animId = requestAnimationFrame(draw);
 
-      // Throttle rendering
       if (time - lastTime < FRAME_INTERVAL) return;
       lastTime = time;
 
@@ -62,21 +67,23 @@ export const Minimap: React.FC<MinimapProps> = ({ getLocalPosition, remotePlayer
       ctx.fillStyle = '#1e1e2f';
       ctx.fillRect(0, 0, W, H);
 
-      // Rooms
-      for (const room of ROOMS) {
-        if (room.id === 'main-hall') continue;
-        const b = room.bounds;
-        ctx.fillStyle = ROOM_COLORS[room.id] || '#333';
-        ctx.fillRect(b.x * SCALE, b.y * SCALE, b.width * SCALE, b.height * SCALE);
+      // Rooms from dynamic config
+      const rooms = dynRoomsRef.current;
+      for (const rv of rooms) {
+        const w = rv.walls;
+        // Draw wall area
+        ctx.fillStyle = hexToCSS(rv.floor.base);
+        ctx.fillRect(w.x * SCALE, w.y * SCALE, (w.w + 1) * SCALE, (w.h + 1) * SCALE);
 
-        ctx.strokeStyle = ROOM_BORDER_COLORS[room.id] || '#555';
+        ctx.strokeStyle = hexToCSS(rv.wall.top);
         ctx.lineWidth = 1;
-        ctx.strokeRect(b.x * SCALE + 0.5, b.y * SCALE + 0.5, b.width * SCALE - 1, b.height * SCALE - 1);
+        ctx.strokeRect(w.x * SCALE + 0.5, w.y * SCALE + 0.5, (w.w + 1) * SCALE - 1, (w.h + 1) * SCALE - 1);
 
-        if (currentRoomRef.current?.id === room.id) {
+        // Highlight current room
+        if (currentRoomRef.current?.id === rv.id) {
           ctx.strokeStyle = '#ffffff44';
           ctx.lineWidth = 2;
-          ctx.strokeRect(b.x * SCALE, b.y * SCALE, b.width * SCALE, b.height * SCALE);
+          ctx.strokeRect(w.x * SCALE, w.y * SCALE, (w.w + 1) * SCALE, (w.h + 1) * SCALE);
         }
       }
 
@@ -155,20 +162,20 @@ export const Minimap: React.FC<MinimapProps> = ({ getLocalPosition, remotePlayer
             title="Click to teleport"
           />
           <div style={styles.legend}>
-            {ROOMS.filter((r) => r.id !== 'main-hall').map((room) => (
+            {dynRooms.map((rv) => (
               <button
-                key={room.id}
+                key={rv.id}
                 style={{
                   ...styles.roomBtn,
-                  borderColor: ROOM_BORDER_COLORS[room.id] || 'rgba(255,255,255,0.1)',
+                  borderColor: hexToCSS(rv.wall.top),
                 }}
                 onClick={() => {
-                  const b = room.bounds;
-                  onTeleport((b.x + b.width / 2) * TILE_SIZE, (b.y + b.height / 2) * TILE_SIZE);
+                  const b = rv.bounds;
+                  onTeleport((b.x + b.w / 2) * TILE_SIZE, (b.y + b.h / 2) * TILE_SIZE);
                 }}
               >
-                <span style={{ ...styles.roomDot, background: ROOM_BORDER_COLORS[room.id] || '#555' }} />
-                {room.name}
+                <span style={{ ...styles.roomDot, background: hexToCSS(rv.wall.top) }} />
+                {rv.name}
               </button>
             ))}
           </div>

@@ -32,6 +32,22 @@ let currentConfig: MapConfig = {
 
 const listeners = new Set<Listener>();
 
+// ── Interactive state (lamp on/off, tv on/off, etc.) ──────────────────────
+// Key: "decoration:index" e.g. "decoration:5"
+const interactiveState = new Map<string, boolean>();
+
+export function getInteractiveState(key: string): boolean {
+  return interactiveState.get(key) ?? true; // default ON
+}
+
+export function toggleInteractive(key: string): boolean {
+  const current = getInteractiveState(key);
+  interactiveState.set(key, !current);
+  return !current;
+}
+
+// ── Config CRUD ───────────────────────────────────────────────────────────
+
 export function getMapConfig(): MapConfig {
   return currentConfig;
 }

@@ -38,7 +38,7 @@ export const ROOM_VISUALS: RoomVisual[] = [
   {
     id: 'meeting-a', name: 'Meeting Room A', type: 'meeting',
     bounds: { x: 3, y: 3, w: 7, h: 5 },
-    walls:  { x: 2, y: 2, w: 8, h: 6 },    // tiles (2,2)→(10,8) inclusive
+    walls:  { x: 2, y: 2, w: 8, h: 6 },
     doors:  [{ x: 10, y: 5 }, { x: 10, y: 6 }],
     soundIsolated: true,
     floor: { base: 0x1e2840, alt: 0x212c46 },
@@ -48,7 +48,7 @@ export const ROOM_VISUALS: RoomVisual[] = [
   {
     id: 'meeting-b', name: 'Meeting Room B', type: 'meeting',
     bounds: { x: 3, y: 11, w: 7, h: 5 },
-    walls:  { x: 2, y: 10, w: 8, h: 6 },   // tiles (2,10)→(10,16) inclusive
+    walls:  { x: 2, y: 10, w: 8, h: 6 },
     doors:  [{ x: 10, y: 13 }, { x: 10, y: 14 }],
     soundIsolated: true,
     floor: { base: 0x1e2840, alt: 0x212c46 },
@@ -58,7 +58,7 @@ export const ROOM_VISUALS: RoomVisual[] = [
   {
     id: 'lounge', name: 'Lounge', type: 'lounge',
     bounds: { x: 39, y: 3, w: 9, h: 7 },
-    walls:  { x: 38, y: 2, w: 10, h: 8 },  // tiles (38,2)→(48,10) inclusive
+    walls:  { x: 38, y: 2, w: 10, h: 8 },
     doors:  [{ x: 38, y: 6 }, { x: 38, y: 7 }],
     soundIsolated: false,
     floor: { base: 0x1e2a22, alt: 0x212e26 },
@@ -68,7 +68,7 @@ export const ROOM_VISUALS: RoomVisual[] = [
   {
     id: 'focus-1', name: 'Focus Room 1', type: 'private',
     bounds: { x: 39, y: 13, w: 4, h: 3 },
-    walls:  { x: 38, y: 12, w: 5, h: 4 },  // tiles (38,12)→(43,16) inclusive
+    walls:  { x: 38, y: 12, w: 5, h: 4 },
     doors:  [{ x: 38, y: 14 }],
     soundIsolated: true,
     floor: { base: 0x28202a, alt: 0x2c242e },
@@ -78,7 +78,7 @@ export const ROOM_VISUALS: RoomVisual[] = [
   {
     id: 'focus-2', name: 'Focus Room 2', type: 'private',
     bounds: { x: 45, y: 13, w: 3, h: 3 },
-    walls:  { x: 44, y: 12, w: 4, h: 4 },  // tiles (44,12)→(48,16) inclusive
+    walls:  { x: 44, y: 12, w: 4, h: 4 },
     doors:  [{ x: 44, y: 14 }],
     soundIsolated: true,
     floor: { base: 0x28202a, alt: 0x2c242e },
@@ -88,7 +88,8 @@ export const ROOM_VISUALS: RoomVisual[] = [
 ];
 
 // ── Furniture definitions ──────────────────────────────────────────────────
-export type FurnitureType = 'desk-group' | 'meeting-table' | 'couch' | 'coffee-table' | 'focus-desk';
+export type FurnitureType = 'desk-group' | 'meeting-table' | 'couch' | 'coffee-table' | 'focus-desk'
+  | 'single-desk' | 'chair' | 'filing-cabinet' | 'standing-desk';
 
 export interface FurnitureItem {
   type: FurnitureType;
@@ -117,7 +118,9 @@ export const FURNITURE: FurnitureItem[] = [
 // ── Decoration definitions ─────────────────────────────────────────────────
 export type DecorationType =
   | 'plant' | 'whiteboard' | 'tv-screen' | 'water-cooler' | 'bookshelf'
-  | 'bulletin-board' | 'lamp' | 'clock' | 'printer' | 'trash-bin' | 'rug-round' | 'wall-art';
+  | 'bulletin-board' | 'lamp' | 'clock' | 'printer' | 'trash-bin' | 'rug-round' | 'wall-art'
+  | 'vending-machine' | 'speaker' | 'fire-extinguisher' | 'coat-rack' | 'umbrella-stand'
+  | 'server-rack' | 'monitor-wall' | 'bean-bag';
 
 export interface DecorationItem {
   type: DecorationType;
@@ -128,28 +131,22 @@ export interface DecorationItem {
 
 export const DECORATIONS: DecorationItem[] = [
   // ── Plants — generously placed throughout ──
-  // Hallway corners (left side)
   { type: 'plant', x: 11, y: 3 },
   { type: 'plant', x: 11, y: 8 },
   { type: 'plant', x: 11, y: 11 },
   { type: 'plant', x: 11, y: 16 },
-  // Hallway corners (right side)
   { type: 'plant', x: 37, y: 3 },
   { type: 'plant', x: 37, y: 10 },
   { type: 'plant', x: 37, y: 16 },
-  // Along top workspace border
   { type: 'plant', x: 13, y: 19 },
   { type: 'plant', x: 20, y: 19 },
   { type: 'plant', x: 27, y: 19 },
   { type: 'plant', x: 34, y: 19 },
-  // Lounge corners
   { type: 'plant', x: 46, y: 4 },
   { type: 'plant', x: 46, y: 8 },
   { type: 'plant', x: 39, y: 9 },
-  // Focus room accents
   { type: 'plant', x: 42, y: 13 },
   { type: 'plant', x: 47, y: 13 },
-  // Open area scatter
   { type: 'plant', x: 15, y: 2 },
   { type: 'plant', x: 25, y: 2 },
   { type: 'plant', x: 35, y: 2 },
@@ -176,7 +173,7 @@ export const DECORATIONS: DecorationItem[] = [
   { type: 'bulletin-board', x: 24, y: 18, w: 2 },
   { type: 'bulletin-board', x: 12, y: 2, w: 2 },
 
-  // ── Floor lamps — ambient lighting accents ──
+  // ── Floor lamps ──
   { type: 'lamp', x: 12, y: 5 },
   { type: 'lamp', x: 12, y: 13 },
   { type: 'lamp', x: 36, y: 5 },
@@ -196,15 +193,23 @@ export const DECORATIONS: DecorationItem[] = [
   { type: 'trash-bin', x: 12, y: 9 },
   { type: 'trash-bin', x: 36, y: 17 },
 
-  // ── Round rugs — cozy accents ──
+  // ── Round rugs ──
   { type: 'rug-round', x: 24, y: 10 },
   { type: 'rug-round', x: 30, y: 10 },
 
-  // ── Wall art / posters — hallway walls ──
+  // ── Wall art ──
   { type: 'wall-art', x: 18, y: 1 },
   { type: 'wall-art', x: 32, y: 1 },
   { type: 'wall-art', x: 25, y: 1 },
 ];
+
+// ── Interactive item state tracking ────────────────────────────────────────
+// Items that can be toggled on/off by clicking
+export type InteractiveType = 'lamp' | 'tv-screen' | 'printer' | 'vending-machine' | 'monitor-wall' | 'speaker';
+
+export function isInteractive(type: string): type is InteractiveType {
+  return ['lamp', 'tv-screen', 'printer', 'vending-machine', 'monitor-wall', 'speaker'].includes(type);
+}
 
 // ── Workspace rug area ─────────────────────────────────────────────────────
 export const WORKSPACE_RUG = { x: 14, y: 21, w: 20, h: 12 };
