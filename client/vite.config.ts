@@ -11,6 +11,13 @@ export default defineConfig({
       '/socket.io': {
         target: 'http://localhost:3001',
         ws: true,
+        // Suppress EPIPE errors from WebSocket proxy during page reloads
+        configure: (proxy) => {
+          proxy.on('error', (err) => {
+            if ((err as NodeJS.ErrnoException).code === 'EPIPE') return;
+            console.error('Proxy error:', err.message);
+          });
+        },
       },
     },
   },

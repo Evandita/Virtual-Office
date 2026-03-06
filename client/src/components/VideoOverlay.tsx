@@ -38,11 +38,14 @@ const VideoTile: React.FC<{ stream: MediaStream; name: string; muted?: boolean; 
         muted={muted}
         style={tileStyles.video}
       />
-      {/* Overlay covers the frozen/black video when peer has no active video */}
       {!hasVideo && (
-        <div style={tileStyles.audioOverlay}>{name.charAt(0).toUpperCase()}</div>
+        <div style={tileStyles.audioOverlay}>
+          <div style={tileStyles.avatarCircle}>{name.charAt(0).toUpperCase()}</div>
+        </div>
       )}
-      <span style={tileStyles.name}>{name}</span>
+      <div style={tileStyles.nameBar}>
+        <span style={tileStyles.name}>{name}</span>
+      </div>
     </div>
   );
 };
@@ -52,11 +55,9 @@ export const VideoOverlay: React.FC<VideoOverlayProps> = ({ localStream, remoteS
 
   return (
     <div style={styles.container}>
-      {/* Local screen share */}
       {screenStream && (
         <VideoTile stream={screenStream} name={screenShareLabel} muted large />
       )}
-      {/* Remote screen shares */}
       {Array.from(remoteScreenStreams.entries()).map(([peerId, stream]) => (
         <VideoTile
           key={`screen-${peerId}`}
@@ -78,7 +79,6 @@ export const VideoOverlay: React.FC<VideoOverlayProps> = ({ localStream, remoteS
         const peerHasVideo = mediaState ? mediaState.video : stream.getVideoTracks().length > 0;
         const peerHasAudio = mediaState ? mediaState.audio : stream.getAudioTracks().length > 0;
 
-        // Hide tile entirely if peer has no media at all
         if (!peerHasVideo && !peerHasAudio) return null;
 
         return (
@@ -97,7 +97,7 @@ export const VideoOverlay: React.FC<VideoOverlayProps> = ({ localStream, remoteS
 const styles: Record<string, React.CSSProperties> = {
   container: {
     position: 'absolute',
-    top: '56px',
+    top: '64px',
     right: '16px',
     display: 'flex',
     flexDirection: 'column',
@@ -109,30 +109,37 @@ const styles: Record<string, React.CSSProperties> = {
 const tileStyles: Record<string, React.CSSProperties> = {
   container: {
     position: 'relative',
-    width: '160px',
-    height: '120px',
-    borderRadius: '8px',
+    width: '168px',
+    height: '126px',
+    borderRadius: '12px',
     overflow: 'hidden',
-    border: '2px solid rgba(255,255,255,0.15)',
-    background: '#000',
+    border: '1px solid rgba(255,255,255,0.08)',
+    background: '#0a0a18',
+    boxShadow: '0 4px 16px rgba(0,0,0,0.3)',
   },
   large: {
     width: '320px',
     height: '180px',
-    border: '2px solid rgba(46,204,113,0.4)',
+    border: '1px solid rgba(46,204,113,0.25)',
   },
   video: {
     width: '100%',
     height: '100%',
     objectFit: 'cover',
   },
-  name: {
+  nameBar: {
     position: 'absolute',
-    bottom: '4px',
-    left: '8px',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    padding: '4px 10px',
+    background: 'linear-gradient(transparent, rgba(0,0,0,0.6))',
+  },
+  name: {
     fontSize: '11px',
     color: '#fff',
-    textShadow: '0 1px 3px rgba(0,0,0,0.8)',
+    fontWeight: 500,
+    textShadow: '0 1px 2px rgba(0,0,0,0.5)',
   },
   audioOverlay: {
     position: 'absolute',
@@ -143,9 +150,18 @@ const tileStyles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    fontSize: '32px',
+    background: 'linear-gradient(135deg, #1a1a2e, #16213e)',
+  },
+  avatarCircle: {
+    width: '48px',
+    height: '48px',
+    borderRadius: '50%',
+    background: 'linear-gradient(135deg, #4A90D9, #7B68EE)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '20px',
     fontWeight: 700,
-    color: 'rgba(255,255,255,0.5)',
-    background: '#1a1a2e',
+    color: '#fff',
   },
 };

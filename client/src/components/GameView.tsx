@@ -8,6 +8,7 @@ import { VideoOverlay } from './VideoOverlay';
 import { Toolbar } from './Toolbar';
 import { Minimap } from './Minimap';
 import { SettingsPanel } from './SettingsPanel';
+import { MapEditor } from './MapEditor';
 import type { Player, AvatarConfig, ChatMessage, PlayerStatus, Position, Direction, Room, Desk } from '../types';
 import { TILE_SIZE, ROOMS } from '../types';
 
@@ -37,6 +38,7 @@ export const GameView: React.FC<GameViewProps> = ({ playerName, avatar: initialA
   const [currentRoom, setCurrentRoom] = useState<Room | null>(null);
   const [avatar, setAvatar] = useState<AvatarConfig>(initialAvatar);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [mapEditorOpen, setMapEditorOpen] = useState(false);
   const [rooms, setRooms] = useState<Room[]>(ROOMS);
   const getLocalPosition = useCallback(() => {
     return sceneRef.current?.getLocalPosition() ?? null;
@@ -151,18 +153,22 @@ export const GameView: React.FC<GameViewProps> = ({ playerName, avatar: initialA
       roomId: 'main-hall',
     };
 
+    const dpr = window.devicePixelRatio || 1;
     const config: Phaser.Types.Core.GameConfig = {
       type: Phaser.AUTO,
       parent: gameContainerRef.current!,
-      width: window.innerWidth,
-      height: window.innerHeight,
-      backgroundColor: '#1a1a2e',
+      width: window.innerWidth * dpr,
+      height: window.innerHeight * dpr,
+      backgroundColor: '#0c0c18',
       scene: OfficeScene,
+      fps: { target: 30, forceSetTimeOut: false },
       physics: { default: 'arcade' },
       scale: {
         mode: Phaser.Scale.RESIZE,
         autoCenter: Phaser.Scale.CENTER_BOTH,
+        zoom: 1 / dpr,
       },
+      render: { antialias: true, pixelArt: false, roundPixels: true },
       input: { keyboard: true },
     };
 
@@ -405,6 +411,42 @@ export const GameView: React.FC<GameViewProps> = ({ playerName, avatar: initialA
         rooms={rooms}
         onToggleRoomLock={handleToggleRoomLock}
       />
+
+      <MapEditor
+        isOpen={mapEditorOpen}
+        onClose={() => setMapEditorOpen(false)}
+        scene={sceneRef.current}
+      />
+
+      {/* Map editor toggle button */}
+      <button
+        onClick={() => setMapEditorOpen((v) => !v)}
+        style={{
+          position: 'absolute',
+          top: '60px',
+          right: '16px',
+          zIndex: 150,
+          padding: '8px 14px',
+          borderRadius: '10px',
+          border: mapEditorOpen ? '1px solid rgba(74,144,217,0.4)' : '1px solid rgba(255,255,255,0.08)',
+          background: mapEditorOpen ? 'rgba(74,144,217,0.2)' : 'rgba(12,12,24,0.8)',
+          backdropFilter: 'blur(12px)',
+          color: mapEditorOpen ? '#7EB8F0' : 'rgba(255,255,255,0.7)',
+          fontSize: '12px',
+          fontWeight: 600,
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '6px',
+          boxShadow: '0 2px 12px rgba(0,0,0,0.3)',
+        }}
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+          <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+        </svg>
+        {mapEditorOpen ? 'Close Editor' : 'Map Editor'}
+      </button>
     </div>
   );
 };
